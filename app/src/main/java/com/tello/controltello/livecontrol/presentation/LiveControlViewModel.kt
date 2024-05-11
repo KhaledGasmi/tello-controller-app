@@ -1,111 +1,110 @@
 package com.tello.controltello.livecontrol.presentation
 
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tello.controltello.lib.FlipDirection
+import com.tello.controltello.lib.Tello
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.InetSocketAddress
+import java.util.concurrent.BlockingQueue
 
 class LiveControlViewModel: ViewModel() {
+    val tello = Tello()
 
-    private var sendCommandSocket: DatagramSocket? = null
-    private var receiveStatSocket: DatagramSocket? = null
-    private var receiveVideoSocket: DatagramSocket? = null
-    private val telloAddress = InetAddress.getByName("192.186.10.1")
-    private val telloSendingPort = 8889
-    private val telloReceiveStatPort = 8890
-    private val telloReceiveVideoPort = 1111
-    val TAG = "view model errors"
+    val isConnected = MutableLiveData(false)
+    val telloStates = MutableLiveData<Map<String, String>>()
+    val isStreaming = MutableLiveData(false)
 
-    val telloStat = MutableLiveData<Map<String, Any>>()
-
-    init {
-        startCommunication()
+    fun connect() {
+        viewModelScope.launch(Dispatchers.IO) {
+            tello.connect()
+            delay(1500)
+            stateConnect()
+            if (tello.isConnected) {
+                isConnected.postValue(true)
+            }
+        }
     }
 
-    private fun startCommunication() {
-        sendCommandSocket = DatagramSocket(null)
-        val command = "command".toByteArray(Charsets.UTF_8)
-        val packetToSend = DatagramPacket(command, command.size, telloAddress, telloSendingPort)
+    fun disconnect() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (tello.isConnected) {
+                tello.disconnect()
+                isConnected.postValue(false)
+            }
+        }
+    }
+
+    fun isConnected(): Boolean {
+        return tello.isConnected
+    }
+
+    fun takeOff() {
+        viewModelScope.launch(Dispatchers.IO) {
+            tello.takeOff()
+        }
+    }
+
+    fun land() {
+        viewModelScope.launch(Dispatchers.IO) {
+            tello.land()
+        }
+    }
+
+    fun flip(direction: FlipDirection) {
+        viewModelScope.launch(Dispatchers.IO) {
+            tello.flip(direction)
+        }
+    }
+
+    fun sendRc(a1: Int, a2: Int, a3: Int, a4: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            tello.sendRc(a1, a2, a3, a4)
+        }
+    }
+
+    private fun stateConnect() {
+        viewModelScope.launch(Dispatchers.IO) {
+            while(true) {
+                val text = tello.stateConnect()
+                val keyValuePairs = text.split(";")
+                val sensorData: MutableMap<String, String> = mutableMapOf()
+                for (pair in keyValuePairs.indices) {
+                    if (pair == keyValuePairs.lastIndex) break
+                    val (key, value) = keyValuePairs[pair].split(":")
+                    sensorData[key] = value
+                }
+                telloStates.postValue(sensorData)
+                delay(200)
+            }
+        }
+    }
+
+    fun getVideoStream(queue: BlockingQueue<Bitmap>) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (sendCommandSocket!!.isConnected) {
-                    sendCommandSocket?.send(packetToSend)
-                }
+                tello.streamOn()
+                isStreaming.postValue(true)
+                tello.receiveStream(queue = queue)
             } catch (e: Exception) {
-                Log.d(TAG, "error: $e")
+                Log.d("TAG", "$e")
             }
         }
     }
 
-    private fun receiveStat() {
-        receiveStatSocket = DatagramSocket(null)
-        receiveStatSocket?.reuseAddress = true
-        receiveStatSocket?.broadcast = true
-        val messageToReceive = ByteArray(3000)
-        val packetToReceive = DatagramPacket(messageToReceive, messageToReceive.size)
-        viewModelScope.launch {
-            try {
-                receiveStatSocket?.bind(InetSocketAddress(telloReceiveStatPort))
-                receiveStatSocket?.receive(packetToReceive)
-                val readyText = String(messageToReceive, 0, packetToReceive.length)
-                telloStat.value = TransferFunctions.stringToMap(readyText)
-            } catch (e: Exception) {
-                Log.d(TAG, "error: $e")
-            }
-        }
-    }
-
-    private fun endCommunication() {
+    fun stopStream() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (sendCommandSocket!!.isConnected) {
-                    sendCommandSocket?.close()
-                }
-                if (receiveStatSocket!!.isConnected) {
-                    receiveStatSocket?.close()
-                }
-                if (receiveVideoSocket!!.isConnected) {
-                    receiveVideoSocket?.close()
-                }
+                tello.streamOff()
+                isStreaming.postValue(false)
             } catch (e: Exception) {
-                Log.d(TAG, "error: $e")
+                Log.d("TAG", "$e")
             }
         }
     }
 
-    private fun sendCommand(command: String) {
-        val commandToSend = command.toByteArray(Charsets.UTF_8)
-        val packetToSend = DatagramPacket(commandToSend, commandToSend.size, telloAddress, telloSendingPort)
-        viewModelScope.launch {
-            try {
-                if (sendCommandSocket!!.isConnected) {
-                    sendCommandSocket?.send(packetToSend)
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "error: $e")
-            }
-        }
-    }
-
-    private fun receiveStream() {
-        receiveVideoSocket = DatagramSocket(null)
-        receiveVideoSocket?.reuseAddress = true
-        receiveVideoSocket?.broadcast = true
-        val messageToReceive = ByteArray(3000)
-        val packetToReceive = DatagramPacket(messageToReceive, messageToReceive.size)
-        viewModelScope.launch {
-            try {
-                receiveVideoSocket?.bind(InetSocketAddress(telloReceiveVideoPort))
-                receiveVideoSocket?.receive(packetToReceive)
-            } catch (e: Exception) {
-                Log.d(TAG, "error: $e")
-            }
-        }
-    }
 }

@@ -1,3 +1,5 @@
+import org.gradle.internal.impldep.bsh.commands.dir
+
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.jetbrainsKotlinAndroid)
@@ -70,4 +72,8 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+    implementation("androidx.media:media:1.7.0")
+    implementation("org.jcodec:jcodec:0.2.3")
+    implementation("com.google.android.exoplayer:exoplayer-core:2.15.1")
+
 }
